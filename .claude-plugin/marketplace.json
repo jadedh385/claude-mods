@@ -1,0 +1,8 @@
+{
+  "name": "jade-mods",
+  "description": "Jade's Claude Code mods",
+  "owner": { "name": "Jade Dhangwattanotai" },
+  "plugins": [
+    { "name": "prompt-refiner", "source": "./mods/prompt-refiner" }
+  ]
+}
