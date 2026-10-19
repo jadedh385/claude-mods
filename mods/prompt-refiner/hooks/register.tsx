@@ -1,4 +1,4 @@
-import type { Register } from 'claude-code'
+import type { EngineInterface, Register } from 'claude-code'
 
 const COMMAND = 'refine'
 const REFINER_MODEL = 'haiku'
@@ -59,9 +59,60 @@ export const buildPrompt = (raw: string, context: string): string =>
 export const clampContext = (parts: readonly string[]): string =>
   parts.filter(part => part.trim() !== '').join('\n\n---\n\n').slice(0, MAX_CONTEXT_CHARS)
 
-export const register: Register = on => {
-  let lastOriginal: string | undefined
+type Mode = 'light' | 'full'
 
+const MSG_FILLED =
+  'Refined prompt is in the box. Edit it, then press Enter. (/refine undo restores yours)'
+const MSG_FAILED = 'Refine failed; your text is unchanged.'
+const MSG_EMPTY = 'Type a prompt in the box first, then press Refine.'
+
+let lastOriginal: string | undefined
+let isBusy = false
+
+async function refineText($: EngineInterface, text: string, mode: Mode): Promise<string> {
+  const parts = await Promise.all(CONTEXT_FILES.map(path => $.fs.read(path).catch(() => '')))
+  const result = await $.model.complete({
+    model: REFINER_MODEL,
+    system: buildSystem(mode),
+    prompt: buildPrompt(text, clampContext(parts)),
+    effort: 'low',
+    timeoutMs: TIMEOUT_MS,
+  })
+
+  if (!result.isAnswered || result.text.trim() === '') return MSG_FAILED
+
+  const refined = result.text.trim()
+  lastOriginal = text
+  const filled = await $.prompt.fill({ text: refined })
+
+  return filled.isFilled ? MSG_FILLED : `Could not fill the prompt box. Refined prompt:\n${refined}`
+}
+
+async function undo($: EngineInterface): Promise<string> {
+  if (lastOriginal === undefined) return 'Nothing to undo.'
+  await $.prompt.fill({ text: lastOriginal })
+
+  return 'Restored your original text.'
+}
+
+async function refineBox($: EngineInterface, mode: Mode): Promise<void> {
+  if (isBusy) return
+  isBusy = true
+  try {
+    const { text } = await $.prompt.read()
+    if (text.trim() === '') {
+      $.ui.toast(MSG_EMPTY)
+      return
+    }
+    $.ui.status('Refining prompt...')
+    $.ui.toast(await refineText($, text, mode))
+  } finally {
+    isBusy = false
+    $.ui.status(undefined)
+  }
+}
+
+export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: COMMAND,
@@ -74,38 +125,26 @@ export const register: Register = on => {
   on('command.run', { command: COMMAND }, async ($, e) => {
     const request = parseArgs(e.args)
 
-    if (request.kind === 'usage') return { text: USAGE }
+    if (request.kind === 'undo') return { text: await undo($) }
+    if (request.kind === 'usage' || request.text === '') return { text: USAGE }
 
-    if (request.kind === 'undo') {
-      if (lastOriginal === undefined) return { text: 'Nothing to undo.' }
-      await $.prompt.fill({ text: lastOriginal })
-      return { text: 'Restored your original text.' }
-    }
+    return { text: await refineText($, request.text, request.mode) }
+  })
 
-    if (request.text === '') return { text: USAGE }
+  on('ui.render', { component: 'AbovePrompt' }, ($, e, next) => {
+    if (e.props.hasSurvey) return next(e)
 
-    const parts = await Promise.all(
-      CONTEXT_FILES.map(path => $.fs.read(path).catch(() => '')),
+    const { Box, Button, Text } = $.ui.resolve(e)
+
+    return (
+      <Box>
+        <Text dimColor>Prompt: </Text>
+        <Button key="refine" label="Refine" onPress={() => refineBox($, 'light')} />
+        <Text> </Text>
+        <Button key="refine-full" label="Refine full" onPress={() => refineBox($, 'full')} />
+        <Text> </Text>
+        <Button key="undo" label="Undo" onPress={async () => $.ui.toast(await undo($))} />
+      </Box>
     )
-    const result = await $.model.complete({
-      model: REFINER_MODEL,
-      system: buildSystem(request.mode),
-      prompt: buildPrompt(request.text, clampContext(parts)),
-      effort: 'low',
-      timeoutMs: TIMEOUT_MS,
-    })
-
-    if (!result.isAnswered || result.text.trim() === '') {
-      return { text: 'Refine failed; your text is unchanged. Re-send it as typed.' }
-    }
-
-    lastOriginal = request.text
-    const filled = await $.prompt.fill({ text: result.text.trim() })
-
-    return {
-      text: filled.isFilled
-        ? 'Refined prompt is in the box. Edit it, then press Enter. (/refine undo restores yours)'
-        : `Could not fill the prompt box. Refined prompt:\n${result.text.trim()}`,
-    }
   })
 }

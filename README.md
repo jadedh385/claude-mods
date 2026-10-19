@@ -14,7 +14,7 @@ Answer `y` to add the marketplace, then pick a scope.
 
 | Mod | What it does |
 | --- | --- |
-| prompt-refiner | `/refine <rough prompt>` rewrites it with Haiku using `CLAUDE.md` and `.claude/refine.md`, and puts it in the prompt box. `/refine full ...` uses Task / Context / Constraints / Done-when. `/refine undo` restores your text. |
+| prompt-refiner | `/refine <rough prompt>` rewrites it with Haiku using `CLAUDE.md` and `.claude/refine.md`, and puts it in the prompt box. A button bar above the prompt (Refine, Refine full, Undo) does the same from whatever is already typed. `/refine full ...` uses Task / Context / Constraints / Done-when. `/refine undo` restores your text. |
 
 ## Adding a mod
 

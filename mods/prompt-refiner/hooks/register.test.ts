@@ -89,3 +89,57 @@ describe('/refine command', () => {
     expect(result.text).toContain('unchanged')
   })
 })
+
+const SURFACES = ['terminal', 'desktop', 'vscode'] as const
+const BAND_PROPS = { hasSurvey: false, isWorking: false } as never
+
+
+describe('button bar', () => {
+  for (const surface of SURFACES) {
+    test(`Refine button fills the box from the typed draft on ${surface}`, async ($, on) => {
+      let filled = ''
+      on('prompt.read', () => ({ value: { text: 'fix login', cursor: 9 } }))
+      on('fs.read', () => ({ value: '' }))
+      on('model.complete', () => ({
+        value: {
+          isAnswered: true,
+          text: 'Fix the login redirect.',
+          usage: { input_tokens: 1, output_tokens: 1 },
+        },
+      }))
+      on('prompt.fill', (_$, e) => {
+        filled = e.text
+        return { isFilled: true }
+      })
+
+      const band = await $.ui.mount({
+        plugin: 'prompt-refiner',
+        surface,
+        component: 'AbovePrompt',
+        props: BAND_PROPS,
+      })
+      await band.press({ key: 'refine' })
+
+      expect(filled).toBe('Fix the login redirect.')
+    })
+  }
+
+  test('does not call the model when the box is empty', async ($, on) => {
+    let modelCalls = 0
+    on('prompt.read', () => ({ value: { text: '   ', cursor: 0 } }))
+    on('model.complete', () => {
+      modelCalls += 1
+      return { value: { isAnswered: false, reason: 'api-error', status: 500, error: 'server_error', usage: { input_tokens: 0, output_tokens: 0 } } }
+    })
+
+    const band = await $.ui.mount({
+      plugin: 'prompt-refiner',
+      surface: 'terminal',
+      component: 'AbovePrompt',
+      props: BAND_PROPS,
+    })
+    await band.press({ key: 'refine' })
+
+    expect(modelCalls).toBe(0)
+  })
+})

@@ -1,6 +1,6 @@
 {
   "name": "prompt-refiner",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "/refine rewrites a rough prompt using project rules and puts it in the prompt box for review",
   "author": { "name": "Jade Dhangwattanotai" }
 }
